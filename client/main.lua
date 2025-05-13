@@ -28,6 +28,55 @@ RegisterCommand('checknpcrobbery', function()
     end
 end, false)
 
+-- Add this utility command to help identify ped models
+RegisterCommand('identifyped', function()
+    local playerPed = PlayerPedId()
+    local playerCoords = GetEntityCoords(playerPed)
+    
+    local closestPed = nil
+    local closestDistance = 5.0
+    local peds = GetGamePool('CPed')
+    
+    for _, ped in ipairs(peds) do
+        if DoesEntityExist(ped) and not IsPedAPlayer(ped) and not IsPedDeadOrDying(ped) then
+            local pedCoords = GetEntityCoords(ped)
+            local distance = #(playerCoords - pedCoords)
+            
+            if distance < closestDistance then
+                closestPed = ped
+                closestDistance = distance
+            end
+        end
+    end
+    
+    if closestPed then
+        local pedModel = GetEntityModel(closestPed)
+        local pedType = GetPedType(closestPed)
+        local pedTypeLabel = ""
+        
+        if pedType == 4 then pedTypeLabel = "Civilian"
+        elseif pedType == 5 then pedTypeLabel = "Gang Member"
+        elseif pedType == 6 then pedTypeLabel = "Cop"
+        elseif pedType == 27 then pedTypeLabel = "SWAT"
+        elseif pedType == 28 then pedTypeLabel = "Animal"
+        elseif pedType == 29 then pedTypeLabel = "Army"
+        else pedTypeLabel = "Other" end
+        
+        QBCore.Functions.Notify('Closest ped model: ' .. pedModel .. ' (Decimal)', 'primary')
+        QBCore.Functions.Notify('Hex: ' .. string.format("0x%08X", pedModel), 'primary')
+        QBCore.Functions.Notify('Type: ' .. pedTypeLabel .. ' (' .. pedType .. ')', 'primary')
+        
+        -- Copy to clipboard if possible
+        TriggerEvent('chat:addMessage', {
+            color = {255, 100, 100},
+            multiline = true,
+            args = {"[PED IDENTIFIER]", "Model: " .. pedModel .. " / 0x" .. string.format("%08X", pedModel)}
+        })
+    else
+        QBCore.Functions.Notify('No ped found nearby', 'error')
+    end
+end, false)
+
 -- Check if enough cops are online
 local function CheckCopCount(cb)
     if Config.RequiredCops <= 0 then
@@ -118,38 +167,100 @@ end
 
 -- Function to check if NPC will fight back
 local function WillPedFightBack(pedModel)
+    DebugPrint("Checking if ped will fight back: " .. pedModel)
+    
     for _, model in ipairs(Config.DangerousPeds) do
         if pedModel == model then
+            DebugPrint("Match found! This ped will fight back")
             return true
         end
     end
+    DebugPrint("No match found. This ped will not fight back")
     return false
 end
 
--- Function to make surrounding pedestrians react and flee
-local function MakeSurroundingPedsFlee()
+-- Function to make surrounding pedestrians react
+local function MakeSurroundingPedsReact(targetPed)
     local playerPed = PlayerPedId()
     local playerCoords = GetEntityCoords(playerPed)
-    local radius = 15.0 -- Radius to check for nearby peds
+    local radius = Config.FleeRadius -- Radius to check for nearby peds
     
     -- Find all nearby peds
     local peds = GetGamePool('CPed')
     
     for _, ped in ipairs(peds) do
-        if DoesEntityExist(ped) and not IsPedAPlayer(ped) and not IsPedDeadOrDying(ped) then
+        if DoesEntityExist(ped) and not IsPedAPlayer(ped) and not IsPedDeadOrDying(ped) and ped ~= targetPed then
             local pedCoords = GetEntityCoords(ped)
             local distance = #(playerCoords - pedCoords)
             
-            -- If ped is within radius and is not the one being robbed
-            if distance <= radius and not isEntityTarget then
-                -- Make ped flee from the player
-                TaskReactAndFleePed(ped, playerPed)
+            -- If ped is within radius
+            if distance <= radius then
+                -- Check if this ped is dangerous (like a fellow gang member)
+                local pedModel = GetEntityModel(ped)
+                local pedType = GetPedType(ped)
                 
-                -- Add a chance for pedestrians to call the police
-                if Config.EnablePoliceAlerts and not Config.WitnessReporting then
-                    -- Skip this to avoid too many police calls
+                -- If it's a dangerous type (gang member, cop, etc) make them fight back too
+                if WillPedFightBack(pedModel) or pedType == 5 then -- 5 = gang member
+                    DebugPrint("Nearby dangerous ped joining the fight: " .. pedModel)
+                    
+                    -- Make the NPC aggressive towards player
+                    SetPedCombatAttributes(ped, 46, true) -- BF_AlwaysFight
+                    SetPedFleeAttributes(ped, 0, 0)  -- Don't flee
+                    SetPedCombatAttributes(ped, 5, true)  -- Can fight without weapons
+                    SetPedCombatAttributes(ped, 17, false)  -- Don't flee from combat
+                    
+                    -- Ensure NPC is unblocked
+                    SetBlockingOfNonTemporaryEvents(ped, false)
+                    
+                    -- Make the NPC attack the player
+                    TaskCombatPed(ped, playerPed, 0, 16)
+                    
+                    -- Add a chance NPC draws weapon if they have one
+                    if math.random(100) <= 70 and HasPedGotWeapon(ped, GetSelectedPedWeapon(ped), false) then
+                        SetCurrentPedWeapon(ped, GetSelectedPedWeapon(ped), true)
+                    else
+                        -- For gang members, give them a weapon if they don't have one
+                        if pedType == 5 then -- Gang member
+                            local gangWeapons = {"WEAPON_PISTOL", "WEAPON_SWITCHBLADE", "WEAPON_BAT", "WEAPON_KNIFE"}
+                            GiveWeaponToPed(ped, GetHashKey(gangWeapons[math.random(#gangWeapons)]), 30, false, true)
+                        end
+                    end
+                    
+                    -- Group combat behavior - make them work together
+                    if DoesEntityExist(targetPed) and not IsPedDeadOrDying(targetPed) then
+                        local groupId = GetPedGroupIndex(targetPed)
+                        if groupId ~= 0 then
+                            SetPedAsGroupMember(ped, groupId)
+                        end
+                    end
+                    
+                    -- Add hostile speech
+                    local speeches = {"GENERIC_CURSE_HIGH", "GENERIC_INSULT_HIGH", "GENERIC_WAR_CRY"}
+                    PlayPedAmbientSpeechNative(ped, speeches[math.random(#speeches)], "SPEECH_PARAMS_FORCE_SHOUTED")
                 else
-                    -- Add code here if you want some witnesses to report crimes
+                    -- Regular civilians still flee
+                    TaskReactAndFleePed(ped, playerPed)
+                    
+                    -- Call police logic here if needed
+                    if Config.EnablePoliceAlerts and Config.WitnessReporting and math.random(100) <= Config.WitnessPoliceCallChance then
+                        -- Witness calling police animation
+                        if math.random(100) <= 50 then -- 50% chance to play phone animation
+                            TaskStartScenarioInPlace(ped, "WORLD_HUMAN_STAND_MOBILE", 0, true)
+                            
+                            -- After a short delay, trigger police alert
+                            Citizen.SetTimeout(math.random(3000, 6000), function()
+                                if Config.EnablePoliceAlerts then
+                                    -- Check which dispatch system is being used
+                                    if GetResourceState('ps-dispatch') == 'started' then
+                                        exports['ps-dispatch']:WitnessedRobbery()
+                                    else
+                                        -- Fallback to default QB police alert
+                                        TriggerServerEvent('police:server:policeAlert', 'Citizen reporting a robbery')
+                                    end
+                                end
+                            end)
+                        end
+                    end
                 end
             end
         end
@@ -227,12 +338,61 @@ local function RobNPC(targetPed)
     
     -- Check if NPC will fight back
     local pedModel = GetEntityModel(targetPed)
-    if WillPedFightBack(pedModel) then
-        -- Make NPC fight back
+    DebugPrint("Attempting to rob ped with model: " .. pedModel)
+    
+    -- Get the ped type to help with decision making
+    local pedType = GetPedType(targetPed)
+    DebugPrint("Ped type: " .. pedType) -- 5 = gang member
+    
+    if WillPedFightBack(pedModel) or pedType == 5 then -- Added pedType check
+        DebugPrint("Ped is dangerous and will fight back")
+        -- Make NPC fight back immediately before robbery proceeds
         QBCore.Functions.Notify('This person is fighting back!', 'error')
-        TaskCombatPed(targetPed, playerPed, 0, 16)
+        
+        -- Make the NPC aggressive towards player (keep existing combat attributes)
+        SetEntityAsMissionEntity(targetPed, true, true)
         SetPedCombatAttributes(targetPed, 46, true)
-        return
+        SetPedFleeAttributes(targetPed, 0, 0)
+        SetPedCombatAttributes(targetPed, 5, true)
+        SetPedCombatAttributes(targetPed, 17, false)
+        SetPedCombatRange(targetPed, 2)
+        
+        -- Improve combat ability for gang members
+        if pedType == 5 then -- Gang member
+            SetPedCombatAbility(targetPed, 100) -- 0-100 (100 = pro)
+            SetPedCombatMovement(targetPed, 3) -- 3 = offensive
+            SetPedAccuracy(targetPed, 60) -- Reasonable accuracy
+        end
+        
+        -- Ensure NPC is unblocked and unfrozen to fight
+        SetBlockingOfNonTemporaryEvents(targetPed, false)
+        FreezeEntityPosition(targetPed, false)
+        
+        -- Make the NPC attack the player
+        TaskCombatPed(targetPed, playerPed, 0, 16)
+        
+        -- Add a small chance NPC draws weapon if they have one
+        if math.random(100) <= 70 and HasPedGotWeapon(targetPed, GetSelectedPedWeapon(targetPed), false) then
+            SetCurrentPedWeapon(targetPed, GetSelectedPedWeapon(targetPed), true)
+        else
+            -- For gang members, give them a weapon if they don't have one
+            if pedType == 5 then -- Gang member
+                local gangWeapons = {"WEAPON_PISTOL", "WEAPON_SWITCHBLADE", "WEAPON_BAT", "WEAPON_KNIFE"}
+                GiveWeaponToPed(targetPed, GetHashKey(gangWeapons[math.random(#gangWeapons)]), 30, false, true)
+                SetCurrentPedWeapon(targetPed, GetHashKey(gangWeapons[math.random(#gangWeapons)]), true)
+            end
+        end
+        
+        -- Add hostile speech
+        local speeches = {"GENERIC_CURSE_HIGH", "GENERIC_INSULT_HIGH", "GENERIC_WAR_CRY"}
+        PlayPedAmbientSpeechNative(targetPed, speeches[math.random(#speeches)], "SPEECH_PARAMS_FORCE_SHOUTED")
+        
+        -- MAKE SURROUNDING DANGEROUS PEDS FIGHT TOO - This is the new part
+        MakeSurroundingPedsReact(targetPed)
+        
+        -- Set cooldown anyway to prevent spam attempts
+        SetCooldown()
+        return -- End the function here so the robbery doesn't continue
     end
     
     -- Start robbery process
@@ -241,8 +401,8 @@ local function RobNPC(targetPed)
     -- Make NPC put hands up (using the renamed function)
     MakeNPCHandsUp(targetPed)
     
-    -- Make surrounding pedestrians flee
-    MakeSurroundingPedsFlee()
+    -- Make surrounding pedestrians react
+    MakeSurroundingPedsReact(targetPed)
     
     -- Player animation
     PlayRobberyAnimation()

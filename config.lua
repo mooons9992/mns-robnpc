@@ -2,7 +2,7 @@ Config = {}
 
 -- General Settings
 Config.Debug = false  -- Change to true temporarily for debugging
-Config.ShouldWaitBetweenRobbing = true -- if the player should wait between robberies 
+Config.ShouldWaitBetweenRobbing = false -- if the player should wait between robberies 
 Config.Cooldown = 60 -- the cooldown between robberies in seconds
 Config.MinDistance = 3.0 -- the distance between the player and the NPC to execute the robbery 
 Config.RobAnimationSeconds = 10000 -- 1000 = 1 second (time to rob an NPC)
@@ -41,6 +41,51 @@ Config.DangerousPeds = {
     1682622302, -- Mafia
     2374966032, -- Drug dealer
     
+    -- Additional gang members - NEWLY ADDED
+    0x278C8CB7, -- Ballas OG
+    0xE52E126C, -- Ballas gang member (alternate)
+    0xDB729238, -- Vagos gang member (alternate)
+    0x2EFEAFD5, -- The Families gang member
+    0x0DE9A30A, -- The Families OG
+    0xFF0B5468, -- The Families gangster
+    0xF42EE883, -- Mafia 2
+    0x249D7287, -- Lost MC member (alternate)
+    0x3CD428CD, -- Lost MC member 2
+    0x44796B88, -- Lost MC member (drug dealer variant)
+    
+    -- Street criminals
+    0x098D9AEA, -- Mugger
+    0x3CDCA742, -- Thief
+    0x936E7EFB, -- Street punk
+    0xDDF3B397, -- Drug dealer 2
+    
+    -- Convert string hashes to decimal for convenience
+    GetHashKey("g_m_y_ballasout_01"),
+    GetHashKey("g_m_y_ballaeast_01"),
+    GetHashKey("g_m_y_ballaorig_01"),
+    GetHashKey("g_m_y_famca_01"),
+    GetHashKey("g_m_y_famdnf_01"),
+    GetHashKey("g_m_y_famfor_01"),
+    GetHashKey("g_m_y_korean_01"),
+    GetHashKey("g_m_y_korean_02"),
+    GetHashKey("g_m_y_korlieut_01"),
+    GetHashKey("g_m_y_lost_01"),
+    GetHashKey("g_m_y_lost_02"),
+    GetHashKey("g_m_y_lost_03"),
+    GetHashKey("g_m_y_mexgang_01"),
+    GetHashKey("g_m_y_mexgoon_01"),
+    GetHashKey("g_m_y_mexgoon_02"),
+    GetHashKey("g_m_y_mexgoon_03"),
+    GetHashKey("g_m_y_pologoon_01"),
+    GetHashKey("g_m_y_pologoon_02"),
+    GetHashKey("g_m_y_salvaboss_01"),
+    GetHashKey("g_m_y_salvagoon_01"),
+    GetHashKey("g_m_y_salvagoon_02"),
+    GetHashKey("g_m_y_salvagoon_03"),
+    GetHashKey("g_m_y_strpunk_01"),
+    GetHashKey("g_m_y_strpunk_02"),
+    GetHashKey("s_m_y_dealer_01"),
+    
     -- Tough citizens
     1641334641, -- Bodybuilder 
     921110016,  -- Military veteran
@@ -59,6 +104,14 @@ Config.DangerousPeds = {
     2506301981, -- Armed yacht crew
     1349953339, -- Epsilon guard
     3880743438, -- Clown (surprisingly dangerous)
+}
+
+-- Gang member settings
+Config.GangMemberThreats = {
+    EnableGroupDefense = true,         -- Gang members will defend each other
+    GangAttackDistance = 20.0,         -- Distance in which gang members will notice and join a fight
+    GangRecognitionChance = 90,        -- Chance that gang members of the same type recognize each other (percent)
+    WeaponChance = 75                  -- Chance that a gang member will pull out a weapon
 }
 
 -- Items Configuration
